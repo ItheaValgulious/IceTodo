@@ -3,7 +3,7 @@ import React, { useContext, useMemo } from 'react';
 import ListWidget, { ListItem } from '../components/ListWidget';
 import { AppContext, isToday } from '../context/AppContext';
 import { PlusIcon } from '../components/Icons';
-import { Page, Task } from '../types';
+import { Page, Task, DateTime } from '../types';
 
 const MyDayPage: React.FC = () => {
   const { tasks, navigateTo, addTask } = useContext(AppContext);
@@ -14,23 +14,28 @@ const MyDayPage: React.FC = () => {
     const todayTimestamp = now.getTime();
 
     const isTaskForMyDay = (task: Task): boolean => {
+      const dueDateTime = task.due_time ? new Date(task.due_time.time_stamp) : null;
+      if (dueDateTime) dueDateTime.setHours(0,0,0,0);
+
       // 1. Outdated and not done
-      if (!task.is_done && task.due_time && new Date(task.due_time.time_stamp).getTime() < todayTimestamp) {
+      if (!task.is_done && dueDateTime && dueDateTime.getTime() < todayTimestamp) {
           return true;
       }
       
       const beginDateTime = task.begin_time || task.create_time;
-      const beginTime = new Date(beginDateTime.time_stamp).getTime();
-      const dueTime = task.due_time ? new Date(task.due_time.time_stamp).getTime() : null;
+      const beginDate = new Date(beginDateTime.time_stamp);
+      beginDate.setHours(0, 0, 0, 0);
+
+      const dueTime = dueDateTime ? dueDateTime.getTime() : null;
 
       // 2. Active today
-      if (task.begin_time === null && dueTime === null) return true; // Treat tasks without dates as always relevant
+      if (task.begin_time === null && task.due_time === null) return true; // Treat tasks without dates as always relevant
       if (dueTime !== null) {
           // Spans today or is due today without a start date
-          return beginTime <= todayTimestamp && todayTimestamp <= dueTime;
+          return beginDate.getTime() <= todayTimestamp && todayTimestamp <= dueTime;
       }
       // Starts before/on today, no due date
-      if (dueTime === null) return beginTime <= todayTimestamp;
+      if (dueTime === null) return beginDate.getTime() <= todayTimestamp;
 
       return false;
     };

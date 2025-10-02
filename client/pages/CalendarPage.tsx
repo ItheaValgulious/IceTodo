@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { Task, DateTime } from '../types';
@@ -20,7 +21,11 @@ const addDays = (date: Date, days: number): Date => {
 };
 const isSameDay = (d1: Date, d2: Date): boolean => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 const getDaysDiff = (d1: Date, d2: Date): number => {
-    const timeDiff = d2.getTime() - d1.getTime();
+    const d1Copy = new Date(d1.getTime());
+    d1Copy.setHours(0,0,0,0);
+    const d2Copy = new Date(d2.getTime());
+    d2Copy.setHours(0,0,0,0);
+    const timeDiff = d2Copy.getTime() - d1Copy.getTime();
     return Math.round(timeDiff / (1000 * 3600 * 24));
 }
 
@@ -38,7 +43,7 @@ const useTaskLayout = (tasks: Task[], intervalStart: Date, intervalEnd: Date) =>
                 return {
                     ...task,
                     startDate: new Date(beginDateTime.time_stamp),
-                    endDate: task.due_time ? new Date(task.due_time.time_stamp) : addDays(new Date(beginDateTime.time_stamp), 1),
+                    endDate: task.due_time ? new Date(task.due_time.time_stamp) : new Date(beginDateTime.time_stamp),
                 }
             })
             .filter(task => task.startDate <= intervalEnd && task.endDate >= intervalStart)
@@ -77,10 +82,18 @@ const TaskBar: React.FC<{ task: Task, gridStart: number, duration: number, track
     };
     const getStatus = (t:Task) => {
         if(t.is_done) return 'done';
-        const now = new Date(); now.setHours(0,0,0,0);
-        if(t.due_time && t.due_time.time_stamp < now.getTime()) return 'outdated';
+        const now = new Date(); 
+        now.setHours(0,0,0,0);
+        const todayTimestamp = now.getTime();
+        
+        if(t.due_time && t.due_time.time_stamp < todayTimestamp) return 'outdated';
+        
         const beginDateTime = t.begin_time || t.create_time;
-        if(beginDateTime.time_stamp > now.getTime()) return 'coming';
+        const beginDate = new Date(beginDateTime.time_stamp);
+        beginDate.setHours(0,0,0,0);
+        
+        if(beginDate.getTime() > todayTimestamp) return 'coming';
+
         return 'running';
     }
 

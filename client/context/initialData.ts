@@ -19,76 +19,7 @@ const twoWeeksAgo = new Date(now.getTime() - 14 * oneDay);
 
 
 export const initialTasks: Task[] = [
-    {
-        id: 1,
-        title: 'Complete React project proposal', // Running
-        is_done: false,
-        content: 'Write up the full proposal including timeline and budget.',
-        create_time: toDateTime(now),
-        update_time: toDateTime(now),
-        begin_time: toDateTime(lastWeek),
-        due_time: toDateTime(nextWeek),
-        priority: 8,
-        tags: ['work', 'react'],
-        children: [],
-        punishment: { delete: false, highlight: true },
-    },
-    {
-        id: 2,
-        title: 'Grocery shopping', // Done
-        is_done: true,
-        content: 'Milk, Bread, Cheese, Eggs',
-        create_time: toDateTime(now),
-        update_time: toDateTime(now),
-        begin_time: null,
-        due_time: null,
-        priority: 5,
-        tags: ['personal', 'chores'],
-        children: [],
-        punishment: { delete: false, highlight: true },
-    },
-    {
-        id: 3,
-        title: 'Book dentist appointment', // Running (no dates)
-        is_done: false,
-        content: '',
-        create_time: toDateTime(now),
-        update_time: toDateTime(now),
-        begin_time: null,
-        due_time: null,
-        priority: 7,
-        tags: ['personal', 'health'],
-        children: [],
-        punishment: { delete: false, highlight: true },
-    },
-    {
-        id: 4,
-        title: 'Plan vacation', // Coming
-        is_done: false,
-        content: 'Research destinations and book flights.',
-        create_time: toDateTime(now),
-        update_time: toDateTime(now),
-        begin_time: toDateTime(tomorrow),
-        due_time: toDateTime(nextWeek),
-        priority: 6,
-        tags: ['personal'],
-        children: [],
-        punishment: { delete: false, highlight: true },
-    },
-    {
-        id: 5,
-        title: 'File expense report', // Outdated
-        is_done: false,
-        content: 'Submit Q3 expenses.',
-        create_time: toDateTime(now),
-        update_time: toDateTime(now),
-        begin_time: toDateTime(twoWeeksAgo),
-        due_time: toDateTime(yesterday),
-        priority: 9,
-        tags: ['work'],
-        children: [],
-        punishment: { delete: false, highlight: true },
-    },
+    
 ];
 
 export const initialNotes: Note[] = [

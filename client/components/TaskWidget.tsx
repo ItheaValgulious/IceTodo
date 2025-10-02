@@ -18,12 +18,15 @@ const getTaskStatus = (task: Task): 'done' | 'outdated' | 'running' | 'coming' =
     now.setHours(0, 0, 0, 0); 
     const todayTimestamp = now.getTime();
 
-    const dueTime = task.due_time ? new Date(task.due_time.time_stamp).getTime() : null;
+    const dueTimestamp = task.due_time ? new Date(task.due_time.time_stamp).getTime() : null;
+    
     const beginDateTime = task.begin_time || task.create_time;
-    const beginTime = new Date(beginDateTime.time_stamp).getTime();
+    const beginDate = new Date(beginDateTime.time_stamp);
+    beginDate.setHours(0, 0, 0, 0);
+    const beginTimestamp = beginDate.getTime();
 
-    if (dueTime && dueTime < todayTimestamp) return 'outdated';
-    if (beginTime > todayTimestamp) return 'coming';
+    if (dueTimestamp && dueTimestamp < todayTimestamp) return 'outdated';
+    if (beginTimestamp > todayTimestamp) return 'coming';
     
     return 'running';
 };

@@ -14,7 +14,7 @@ import LoginModal from './components/LoginModal';
 import { AppContext } from './context/AppContext';
 
 const App: React.FC = () => {
-  const { activePage, activeId, navigateTo, configs, isLoginModalOpen, setLoginModalOpen } = useContext(AppContext);
+  const { activePage, activeId, navigateTo, configs, isLoginModalOpen, setLoginModalOpen, isLoggedIn, syncData } = useContext(AppContext);
 
   useEffect(() => {
     const darkModeConfig = configs.find(c => c.title === 'Appearance')?.items.find(i => i.name === 'Dark Mode');
@@ -24,6 +24,19 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
   }, [configs]);
+
+  useEffect(() => {
+    // Function that runs when the page is opened
+    const onPageOpen = async () => {
+      console.log('Page opened');
+      // Sync data when page opens
+      if (isLoggedIn) {
+        await syncData();
+      }
+    };
+    
+    onPageOpen();
+  }, [isLoggedIn, syncData]);
 
   const navConfig = useMemo(() => {
     const navSection = configs.find(c => c.title === 'Navigation');

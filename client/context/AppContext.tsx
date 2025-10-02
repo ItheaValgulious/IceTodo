@@ -4,6 +4,8 @@ import { Task, Note, ConfigSection, Page, DateTime, SyncPayload } from '../types
 import useLocalStorage from '../hooks/useLocalStorage';
 import { initialTasks, initialNotes, initialConfigs } from './initialData';
 
+let server_host="http://localhost:9000"
+
 export const getCurrentDateTime = (): DateTime => {
     const now = new Date();
     return {
@@ -56,6 +58,7 @@ interface AppContextType {
     setLoginModalOpen: (isOpen: boolean) => void;
     login: (user: string, pass: string) => Promise<boolean>;
     logout: () => void;
+    syncData: () => Promise<void>;
     addTask: (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>) => number;
     updateTask: (task: Task) => void;
     deleteTask: (taskId: number) => void;
@@ -132,7 +135,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const triggerSync = () => {
         if (!isLoggedIn) return;
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-        syncTimeoutRef.current = window.setTimeout(syncData, 2000); // Debounce for 2s
+        syncTimeoutRef.current = window.setTimeout(syncData, 10); // Debounce for 2s
     };
     
     const getLocalDataPayload = (): SyncPayload => {
@@ -140,12 +143,16 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         const allTaskTags = [...new Set<string>(tasks.flatMap(t => t.tags))];
         // FIX: Explicitly specify the generic type for Set to avoid type inference issues.
         const allNoteTags = [...new Set<string>(notes.flatMap(n => n.tags))];
+        
+        // Use the last modification time, or if there is nothing local, the time should be 0
+        const time = tasks.length > 0 || notes.length > 0 ? lastLocalUpdate : 0;
+        
         return {
             tasks,
             notes,
             task_tag: allTaskTags,
             note_tag: allNoteTags,
-            time: Date.now()
+            time
         };
     };
 
@@ -176,36 +183,33 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         console.log("Starting sync...");
 
         const localData = getLocalDataPayload();
-        const localHash = simpleHash(JSON.stringify({ tasks: localData.tasks, notes: localData.notes, tags: [...localData.task_tag, ...localData.note_tag] }));
+        const localHash = simpleHash(JSON.stringify(localData));
 
         try {
-            const checkRes = await fetch('a.com/check/', {
+            const checkRes = await fetch(server_host+'/check/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ token, hash: localHash })
             });
             // Mocking server response for now
-            // const checkData = await checkRes.json();
-            const checkData = { sync_needed: true }; 
+            const checkData = await checkRes.json();
 
-            if (checkData.sync_needed) {
+            if (checkData.need_sync) {
                 console.log("Sync needed. Fetching server data...");
-                const syncGetRes = await fetch('a.com/sync/', {
-                    method: 'POST', // Using POST as GET cannot have a body
+                const syncGetRes = await fetch(server_host+'/sync/pull/', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
                 });
-                // const serverPayload = await syncGetRes.json();
-                // const serverData = serverPayload.content;
-                const serverData: SyncPayload = { tasks: [], notes: [], task_tag: [], note_tag: [], time: Date.now() + 5000 }; // Mock
+                const serverPayload = await syncGetRes.json();
 
-                if (serverData.time > lastLocalUpdate) {
+                if (syncGetRes.status!=404 && serverPayload.time > lastLocalUpdate) {
                     console.log("Server data is newer. Updating local data.");
-                    replaceLocalData(serverData);
-                    setLastLocalUpdate(serverData.time);
+                    replaceLocalData(serverPayload);
+                    setLastLocalUpdate(serverPayload.time);
                 } else {
                     console.log("Local data is newer. Uploading to server.");
-                    await fetch('a.com/sync', {
+                    await fetch(server_host+'/sync/push/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ token, content: localData })
@@ -229,17 +233,18 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     // --- Auth ---
     const login = async (user: string, pass: string): Promise<boolean> => {
         try {
-            const response = await fetch('a.com/login', {
+            const response = await fetch(server_host+'/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: user, password: pass }),
             });
             const data = await response.json();
             
-            if (data.state === 'success' && data.token) {
+            if (data.status === 'success' && data.token) {
                 setToken(data.token);
                 setUsername(user);
                 setIsLoggedIn(true);
+                setLastLocalUpdate(0);
                 await syncData(); // Initial sync
                 return true;
             }
@@ -256,7 +261,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
     const logout = async () => {
         try {
-            await fetch('a.com/logout');
+            await fetch(server_host+'/logout');
         } catch (error) {
             console.error("Logout request failed:", error);
         } finally {
@@ -366,7 +371,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     };
 
     const value = {
-        tasks, notes, configs, tags, activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout,
+        tasks, notes, configs, tags, activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout, syncData,
         addTask, updateTask, deleteTask, getTaskById,
         addNote, updateNote, deleteNote, getNoteById,
         updateConfig, addTag, navigateTo, navigateBack
