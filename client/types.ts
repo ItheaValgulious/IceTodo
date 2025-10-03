@@ -71,8 +71,7 @@ export type ListItem = { type: 'task'; task: Task } | { type: 'list'; title: str
 export interface SyncPayload {
     tasks: Task[];
     notes: Note[];
-    task_tag: string[];
-    note_tag: string[];
+    tags: string[];  // Unified tags for both tasks and notes
     time: number;
 }
 

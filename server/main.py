@@ -39,8 +39,7 @@ class UserInfo(Base):
     __tablename__ = "user_info"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    task_tags = Column(JSON, default=list)
-    note_tags = Column(JSON, default=list)
+    tags = Column(JSON, default=list)  # Unified tags for both tasks and notes
     
     user = relationship("User", back_populates="user_info")
 
@@ -120,8 +119,7 @@ class NoteModel(BaseModel):
 class SyncContent(BaseModel):
     tasks: List[TaskModel]
     notes: List[NoteModel]
-    task_tag: List[str]
-    note_tag: List[str]
+    tags: List[str]  # Unified tags for both tasks and notes
     time: int
 
 # --- Helper Functions ---
@@ -213,7 +211,7 @@ def get_sync(request: SyncPullRequest, db: Session = Depends(get_db)):
     
     user_info = db.query(UserInfo).filter(UserInfo.user_id == user_id).first()
     if not user_info:
-        user_info = UserInfo(user_id=user_id, task_tags=[], note_tags=[])
+        user_info = UserInfo(user_id=user_id, tags=[])
         db.add(user_info)
         db.commit()
 
@@ -244,11 +242,17 @@ def get_sync(request: SyncPullRequest, db: Session = Depends(get_db)):
             create_time.day == request.day):
             notes.append(NoteModel.model_validate_json(note_db.content))
 
+    # Collect all unique tags from tasks and notes
+    all_tags = set()
+    for task in tasks:
+        all_tags.update(task.tags)
+    for note in notes:
+        all_tags.update(note.tags)
+
     return SyncContent(
         tasks=tasks,
         notes=notes,
-        task_tag=user_info.task_tags,
-        note_tag=user_info.note_tags,
+        tags=list(all_tags),
         time=update_time
     )
 
@@ -303,13 +307,12 @@ def push_sync(request: PushRequest, db: Session = Depends(get_db)):
         )
         db.add(db_note)
 
-    # Update user tags
+    # Update user tags (unified tags from all tasks and notes)
     user_info = db.query(UserInfo).filter(UserInfo.user_id == user_id).first()
     if not user_info:
         user_info = UserInfo(user_id=user_id)
         db.add(user_info)
-    user_info.task_tags = request.content.task_tag
-    user_info.note_tags = request.content.note_tag
+    user_info.tags = request.content.tags
 
     # Update day update time
     date_str = f"{request.year}-{request.month:02d}-{request.day:02d}"

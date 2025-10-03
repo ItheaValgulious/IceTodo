@@ -1,10 +1,11 @@
 
 import React, { useState } from 'react';
-import { Task } from '../types';
+import { Task, Note } from '../types';
 import TaskWidget from './TaskWidget';
+import NoteWidget from "./NoteWidget"
 import { ChevronDownIcon, ChevronUpIcon } from './Icons';
 
-export type ListItem = { type: 'task'; data: Task } | { type: 'list'; data: ListWidgetProps };
+export type ListItem = { type: 'task'; data: Task } | { type: 'note'; data: Note } | { type: 'list'; data: ListWidgetProps };
 
 interface ListWidgetProps {
   title: string;
@@ -39,6 +40,8 @@ const ListWidget: React.FC<ListWidgetProps> = ({ title, items, foldable = true, 
             items.map((item, index) => {
               if (item.type === 'task') {
                 return <TaskWidget key={item.data.id} task={item.data} />;
+              } else if (item.type === 'note') {
+                return <NoteWidget key={item.data.id} note={item.data} />;
               } else if (item.type === 'list') {
                 return <ListWidget key={`${item.data.title}-${index}`} {...item.data} />;
               }

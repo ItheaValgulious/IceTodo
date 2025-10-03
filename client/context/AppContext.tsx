@@ -40,7 +40,7 @@ interface AppContextType {
     tasks: Task[];
     notes: Note[];
     configs: ConfigSection[];
-    tags: string[];
+    tags: string[]; // Derived from tasks and notes
     activePage: Page;
     activeId: number | null;
     isLoggedIn: boolean;
@@ -59,7 +59,7 @@ interface AppContextType {
     deleteNote: (noteId: number) => void;
     getNoteById: (noteId: number) => Note | undefined;
     updateConfig: (sectionTitle: string, itemName: string, value: any) => void;
-    addTag: (tag: string) => void;
+    addTag: (tag: string) => void; // Now adds tag to current task/note
     navigateTo: (page: Page, id: number | null) => void;
     navigateBack: () => void;
     localDayUpdates: DayUpdate;
@@ -71,7 +71,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [notes, setNotes] = useState<Note[]>([]);
     const [configs, setConfigs] = useLocalStorage<ConfigSection[]>('configs', initialConfigs);
-    const [tags, setTags] = useLocalStorage<string[]>('tags', []);
+    // Unified tags are now derived from tasks and notes, not stored separately
     const [activePage, setActivePage] = useState<Page>(Page.MyDay);
     const [activeId, setActiveId] = useState<number | null>(null);
     const [pageBeforeEdit, setPageBeforeEdit] = useState<Page>(Page.MyDay);
@@ -240,8 +240,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                 const dayPayload: SyncPayload = {
                     tasks: dayTasks,
                     notes: dayNotes,
-                    task_tag: [...new Set<string>(dayTasks.flatMap(t => t.tags))],
-                    note_tag: [...new Set<string>(dayNotes.flatMap(n => n.tags))],
+                    tags: [...new Set<string>([...dayTasks.flatMap(t => t.tags), ...dayNotes.flatMap(n => n.tags)])],
                     time: localDayUpdates[dateStr] || 0
                 };
                 
@@ -412,16 +411,21 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         ));
     };
 
+    // Derive unified tags from all tasks and notes
+    const getAllTags = (): string[] => {
+        const taskTags = tasks.flatMap(task => task.tags);
+        const noteTags = notes.flatMap(note => note.tags);
+        return [...new Set([...taskTags, ...noteTags])];
+    };
+
     const addTag = (tag: string) => {
-        if (tag && !tags.includes(tag)) {
-            setTags(prev => [...prev, tag]);
-            // Note: Tag changes will be synced with task/note updates.
-            triggerSync();
-        }
+        // This function is now deprecated since tags are derived from tasks/notes
+        // Tags should be added directly to tasks or notes
+        console.warn('addTag is deprecated. Add tags directly to tasks or notes.');
     };
 
     const value = {
-        tasks, notes, configs, tags, activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout, syncData,
+        tasks, notes, configs, tags: getAllTags(), activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout, syncData,
         addTask, updateTask, deleteTask, getTaskById,
         addNote, updateNote, deleteNote, getNoteById,
         updateConfig, addTag, navigateTo, navigateBack,
