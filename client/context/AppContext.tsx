@@ -80,7 +80,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const [isLoggedIn, setIsLoggedIn] = useLocalStorage('isLoggedIn', false);
     const [username, setUsername] = useLocalStorage('username', '');
     const [token, setToken] = useLocalStorage('token', '');
-    const [lastLocalUpdate, setLastLocalUpdate] = useLocalStorage('lastLocalUpdate', 0);
+
     const [localDayUpdates, setLocalDayUpdates] = useLocalStorage<DayUpdate>('localDayUpdates', {});
     const [isLoginModalOpen, setLoginModalOpen] = useState(false);
     const syncTimeoutRef = useRef<number | null>(null);
@@ -130,47 +130,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = window.setTimeout(syncData, 10); // Debounce for 2s
     };
-    
-    const getLocalDataPayload = (): SyncPayload => {
-        // FIX: Explicitly specify the generic type for Set to avoid type inference issues.
-        const allTaskTags = [...new Set<string>(tasks.flatMap(t => t.tags))];
-        // FIX: Explicitly specify the generic type for Set to avoid type inference issues.
-        const allNoteTags = [...new Set<string>(notes.flatMap(n => n.tags))];
-        
-        // Use the last modification time, or if there is nothing local, the time should be 0
-        const time = tasks.length > 0 || notes.length > 0 ? lastLocalUpdate : 0;
-        
-        return {
-            tasks,
-            notes,
-            task_tag: allTaskTags,
-            note_tag: allNoteTags,
-            time
-        };
-    };
-
-    const replaceLocalData = (payload: SyncPayload) => {
-        // Update state
-        setTasks(payload.tasks);
-        setNotes(payload.notes);
-        const allTags = [...new Set([...payload.task_tag, ...payload.note_tag])];
-        setTags(allTags);
-
-        // Clear old local storage
-        const oldTaskIds: number[] = JSON.parse(localStorage.getItem('task_ids') || '[]');
-        oldTaskIds.forEach(id => localStorage.removeItem(`task_${id}`));
-        const oldNoteIds: number[] = JSON.parse(localStorage.getItem('note_ids') || '[]');
-        oldNoteIds.forEach(id => localStorage.removeItem(`note_${id}`));
-
-        // Set new local storage
-        localStorage.setItem('task_ids', JSON.stringify(payload.tasks.map(t => t.id)));
-        payload.tasks.forEach(t => localStorage.setItem(`task_${t.id}`, JSON.stringify(t)));
-        localStorage.setItem('note_ids', JSON.stringify(payload.notes.map(n => n.id)));
-        payload.notes.forEach(n => localStorage.setItem(`note_${n.id}`, JSON.stringify(n)));
-        
-        console.log("Local data overwritten by server data.");
-    };
-
 
 
     const syncData = async () => {
@@ -226,6 +185,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                 const localUpdateTime = localDayUpdates[dateStr] || 0;
                 const serverUpdateTime = serverDayUpdates[dateStr] || 0;
                 if (localUpdateTime > serverUpdateTime) {
+                    console.log(localUpdateTime, serverUpdateTime);
                     daysToPush.push(dateStr);
                 }
             }
@@ -282,13 +242,13 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                     notes: dayNotes,
                     task_tag: [...new Set<string>(dayTasks.flatMap(t => t.tags))],
                     note_tag: [...new Set<string>(dayNotes.flatMap(n => n.tags))],
-                    time: localDayUpdates[dateStr] || Date.now()
+                    time: localDayUpdates[dateStr] || 0
                 };
                 
                 const pushRes = await fetch(server_host+'/sync/push/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, year, month, day, content: dayPayload })
+                    body: JSON.stringify({ token, year, month, day, time: dayPayload.time, content: dayPayload })
                 });
                 
                 if (pushRes.ok) {
@@ -324,7 +284,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                 setToken(data.token);
                 setUsername(user);
                 setIsLoggedIn(true);
-                setLastLocalUpdate(0);
+
                 await syncData(); // Initial sync
                 return true;
             }
@@ -352,7 +312,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     };
 
     // --- Data C R U D ---
-    const updateLocalTimestamp = () => setLastLocalUpdate(Date.now());
+
 
     const updateDayTimestamp = (dateStr: string) => {
         setLocalDayUpdates(prev => ({
@@ -382,7 +342,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         setTasks(newTasks);
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
         localStorage.setItem(`task_${newTask.id}`, JSON.stringify(newTask));
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(now));
         triggerSync();
         return newTask.id;
@@ -393,7 +352,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         const newTasks = tasks.map(task => task.id === updatedTask.id ? { ...updatedTask, update_time: now } : task);
         setTasks(newTasks);
         localStorage.setItem(`task_${updatedTask.id}`, JSON.stringify({ ...updatedTask, update_time: now }));
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(now));
         triggerSync();
     };
@@ -403,7 +361,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         setTasks(newTasks);
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
         localStorage.removeItem(`task_${taskId}`);
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(getCurrentDateTime()));
         triggerSync();
     };
@@ -424,7 +381,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         setNotes(newNotes);
         localStorage.setItem('note_ids', JSON.stringify(newNotes.map(n => n.id)));
         localStorage.setItem(`note_${newNote.id}`, JSON.stringify(newNote));
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(now));
         triggerSync();
         return newNote.id;
@@ -435,7 +391,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         const newNotes = notes.map(note => note.id === updatedNote.id ? { ...updatedNote, update_time: now } : note);
         setNotes(newNotes);
         localStorage.setItem(`note_${updatedNote.id}`, JSON.stringify({ ...updatedNote, update_time: now }));
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(now));
         triggerSync();
     };
@@ -445,7 +400,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         setNotes(newNotes);
         localStorage.setItem('note_ids', JSON.stringify(newNotes.map(n => n.id)));
         localStorage.removeItem(`note_${noteId}`);
-        updateLocalTimestamp();
         updateDayTimestamp(formatDateForContent(getCurrentDateTime()));
         triggerSync();
     };
@@ -462,6 +416,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         if (tag && !tags.includes(tag)) {
             setTags(prev => [...prev, tag]);
             // Note: Tag changes will be synced with task/note updates.
+            triggerSync();
         }
     };
 

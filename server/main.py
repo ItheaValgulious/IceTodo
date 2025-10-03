@@ -62,6 +62,15 @@ class Note(Base):
     
     user = relationship("User", back_populates="notes")
 
+class Day(Base):
+    __tablename__ = "days"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    date_str = Column(String)  # Format: "YYYY-MM-DD"
+    update_time = Column(Integer)
+    
+    user = relationship("User")
+
 
 
 Base.metadata.create_all(bind=engine)
@@ -208,6 +217,11 @@ def get_sync(request: SyncPullRequest, db: Session = Depends(get_db)):
         db.add(user_info)
         db.commit()
 
+    # Get day update time from day table
+    date_str = f"{request.year}-{request.month:02d}-{request.day:02d}"
+    day_record = db.query(Day).filter(Day.user_id == user_id, Day.date_str == date_str).first()
+    update_time = day_record.update_time if day_record else int(datetime.datetime.now().timestamp() * 1000)
+
     # Get all tasks and notes for the user
     tasks_db = db.query(Task).filter(Task.user_id == user_id).all()
     notes_db = db.query(Note).filter(Note.user_id == user_id).all()
@@ -235,7 +249,7 @@ def get_sync(request: SyncPullRequest, db: Session = Depends(get_db)):
         notes=notes,
         task_tag=user_info.task_tags,
         note_tag=user_info.note_tags,
-        time=int(datetime.datetime.now().timestamp() * 1000)
+        time=update_time
     )
 
 class PushRequest(BaseModel):
@@ -243,6 +257,7 @@ class PushRequest(BaseModel):
     year: int
     month: int
     day: int
+    time: int  # New time parameter
     content: SyncContent
 
 class GetDaysRequest(BaseModel):
@@ -296,6 +311,15 @@ def push_sync(request: PushRequest, db: Session = Depends(get_db)):
     user_info.task_tags = request.content.task_tag
     user_info.note_tags = request.content.note_tag
 
+    # Update day update time
+    date_str = f"{request.year}-{request.month:02d}-{request.day:02d}"
+    day_record = db.query(Day).filter(Day.user_id == user_id, Day.date_str == date_str).first()
+    if day_record:
+        day_record.update_time = request.time
+    else:
+        day_record = Day(user_id=user_id, date_str=date_str, update_time=request.time)
+        db.add(day_record)
+
     db.commit()
     return {"status": "success"}
 
@@ -304,29 +328,14 @@ def get_days(request: GetDaysRequest, db: Session = Depends(get_db)):
     """Get a dictionary of all dates with their update times for the user"""
     user_id = get_current_user_id(request.token)
     
-    # Get all tasks and notes for the user to extract unique dates
-    tasks = db.query(Task).filter(Task.user_id == user_id).all()
-    notes = db.query(Note).filter(Note.user_id == user_id).all()
+    # Get all day records for the user
+    day_records = db.query(Day).filter(Day.user_id == user_id).all()
     
     dates_dict = {}
     
-    # Process tasks to get dates and update times
-    for task in tasks:
-        create_time = get_create_time_from_content(task.content)
-        date_str = f"{create_time.year}-{create_time.month:02d}-{create_time.day:02d}"
-        
-        # Use the latest update time for this date
-        if date_str not in dates_dict or task.update_time > dates_dict[date_str]:
-            dates_dict[date_str] = task.update_time
-    
-    # Process notes to get dates and update times
-    for note in notes:
-        create_time = get_create_time_from_content(note.content)
-        date_str = f"{create_time.year}-{create_time.month:02d}-{create_time.day:02d}"
-        
-        # Use the latest update time for this date
-        if date_str not in dates_dict or note.update_time > dates_dict[date_str]:
-            dates_dict[date_str] = note.update_time
+    # Process day records to build dates dictionary
+    for day_record in day_records:
+        dates_dict[day_record.date_str] = day_record.update_time
     
     return {"days": dates_dict}
 

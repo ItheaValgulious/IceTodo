@@ -40,31 +40,37 @@ const useTaskLayout = (tasks: Task[], intervalStart: Date, intervalEnd: Date) =>
         const relevantTasks: GanttTask[] = tasks
             .map(task => {
                 const beginDateTime = task.begin_time || task.create_time;
+                const startDate = new Date(beginDateTime.time_stamp);
+                startDate.setHours(0, 0, 0, 0);
+
+                const endDate = task.due_time ? new Date(task.due_time.time_stamp) : new Date(beginDateTime.time_stamp);
+                endDate.setHours(0, 0, 0, 0);
+                
                 return {
                     ...task,
-                    startDate: new Date(beginDateTime.time_stamp),
-                    endDate: task.due_time ? new Date(task.due_time.time_stamp) : new Date(beginDateTime.time_stamp),
+                    startDate: startDate,
+                    endDate: endDate,
                 }
             })
             .filter(task => task.startDate <= intervalEnd && task.endDate >= intervalStart)
             .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
 
         const tracks: { task: GanttTask; track: number }[] = [];
-        const trackEnds: Date[] = [];
+        const trackEnds: Date[] = []; // Stores the first FREE day for each track
 
         relevantTasks.forEach(task => {
             let placed = false;
             for (let i = 0; i < trackEnds.length; i++) {
-                if (trackEnds[i] < task.startDate) {
+                if (trackEnds[i].getTime() <= task.startDate.getTime()) {
                     tracks.push({ task, track: i });
-                    trackEnds[i] = task.endDate;
+                    trackEnds[i] = addDays(task.endDate, 1);
                     placed = true;
                     break;
                 }
             }
             if (!placed) {
                 tracks.push({ task, track: trackEnds.length });
-                trackEnds.push(task.endDate);
+                trackEnds.push(addDays(task.endDate, 1));
             }
         });
 
@@ -174,13 +180,19 @@ const MonthView: React.FC<{ displayDate: Date, tasks: Task[] }> = ({ displayDate
             {weeks.map(weekStart => {
                 const weekEnd = addDays(weekStart, 6);
                 const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-                const { positionedTasks } = useTaskLayout(tasks, weekStart, weekEnd);
+                const { positionedTasks, totalTracks } = useTaskLayout(tasks, weekStart, weekEnd);
+                
+                const weekHeight = Math.max(4, totalTracks + 1) * 1.75;
 
                 return (
-                    <div key={weekStart.toISOString()} className="grid grid-cols-7 relative border-b border-slate-300 dark:border-slate-600 last:border-b-0">
+                    <div 
+                        key={weekStart.toISOString()} 
+                        className="grid grid-cols-7 relative border-b border-slate-300 dark:border-slate-600 last:border-b-0"
+                        style={{ height: `${weekHeight}rem` }}
+                    >
                         {/* Day cells for grid lines and numbers */}
                         {days.map((day, index) => (
-                            <div key={day.toISOString()} className={`h-28 text-right p-1 border-r border-slate-300 dark:border-slate-600 last:border-r-0
+                            <div key={day.toISOString()} className={`text-right p-1 border-r border-slate-300 dark:border-slate-600 last:border-r-0
                                 ${day.getMonth() !== displayDate.getMonth() ? 'bg-slate-50 dark:bg-slate-800/50 text-slate-400' : 'bg-white dark:bg-slate-800'}
                                 ${isSameDay(day, new Date()) ? '!bg-blue-50 dark:!bg-blue-900/20' : ''}
                             `}>
