@@ -157,6 +157,22 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         }
         setActivePage(page);
         setActiveId(id);
+
+        if(page==Page.TaskEdit){
+            setTimeout(() => {
+                const titleInput = document.getElementById('title') as HTMLInputElement;
+                if (titleInput) {
+                    titleInput.focus();
+                }
+            }, 10);
+        }else if(page==Page.NoteEdit){
+            setTimeout(() => {
+                const contentTextarea = document.getElementById('content') as HTMLTextAreaElement;
+                if (contentTextarea) {
+                    contentTextarea.focus();
+                }
+            }, 10);
+        }
     };
 
     const navigateBack = () => {
@@ -425,7 +441,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const addTask = (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): Promise<number> => {
         const now = getCurrentDateTime();
         const newTask: Task = {
-            title: 'New Task',
+            title: '', // Empty title for new tasks
             is_done: false,
             content: '',
             priority: 5,
@@ -559,7 +575,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const addNote = (note: Partial<Omit<Note, 'id' | 'create_time' | 'update_time'>>): number => {
         const now = getCurrentDateTime();
         const newNote: Note = {
-            content: 'New Note',
+            content: '', // Empty content for new notes
             tags: [],
             ...note,
             id: Date.now(),

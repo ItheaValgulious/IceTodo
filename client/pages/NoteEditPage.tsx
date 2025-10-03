@@ -20,6 +20,7 @@ const NoteEditPage: React.FC<{ noteId: number | null }> = ({ noteId }) => {
         }
     }, [noteId, getNoteById]);
 
+
     // Autosave with debounce
     useEffect(() => {
         if (isInitialLoad.current) {

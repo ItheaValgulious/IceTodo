@@ -46,7 +46,7 @@ const MyDayPage: React.FC = () => {
   }, [tasks]);
 
   const handleAddTask = () => {
-    const newTaskId = addTask({ title: 'New Task' });
+    const newTaskId = addTask({ title: '' });
     navigateTo(Page.TaskEdit, newTaskId);
   };
 

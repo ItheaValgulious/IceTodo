@@ -21,6 +21,7 @@ const TaskEditPage: React.FC<{ taskId: number | null }> = ({ taskId }) => {
         }
     }, [taskId, getTaskById]);
 
+
     // Autosave with debounce
     useEffect(() => {
         if (isInitialLoad.current) {
@@ -152,7 +153,7 @@ const TaskEditPage: React.FC<{ taskId: number | null }> = ({ taskId }) => {
             <div className="space-y-6">
                 <div>
                     <label htmlFor="title" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Title</label>
-                    <input type="text" name="title" id="title" value={task.title} onChange={handleChange} required className="mt-1 block w-full p-2 border rounded-md bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600" />
+                    <input type="text" name="title" id="title" value={task.title} onChange={handleChange} required placeholder="Task Title" className="mt-1 block w-full p-2 border rounded-md bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600" />
                 </div>
 
                 <div>

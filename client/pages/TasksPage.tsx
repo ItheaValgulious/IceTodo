@@ -26,7 +26,7 @@ const TasksPage: React.FC = () => {
   };
 
   const handleAddTask = () => {
-    const newTaskId = addTask({ title: 'New Task' });
+    const newTaskId = addTask({ title: '' });
     navigateTo(Page.TaskEdit, newTaskId);
   };
 
