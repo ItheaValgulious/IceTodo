@@ -65,7 +65,14 @@ export const initialConfigs: ConfigSection[] = [
         title: 'Notifications',
         items: [
             { name: 'Enable Notifications', type: 'boolean', value: true },
-            { name: 'Reminder Time (minutes)', type: 'number', value: 30 },
+            { 
+                name: 'Notification Time', 
+                type: 'notification_time_list', 
+                value: [
+                    { id: '1', beforeDays: 0, time: { hour: 9, minute: 0 } }, // On due day at 9:00 AM
+                    { id: '2', beforeDays: 2, time: { hour: 9, minute: 0 } }, // 1 day before at 9:00 AM
+                ]
+            },
         ],
     },
 ];

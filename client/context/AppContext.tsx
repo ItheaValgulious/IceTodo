@@ -1,8 +1,9 @@
-
 import React, { createContext, useState, ReactNode, useEffect, useRef } from 'react';
-import { Task, Note, ConfigSection, Page, DateTime, SyncPayload, DayUpdate } from '../types';
+import { Task, Note, ConfigSection, Page, DateTime, SyncPayload, DayUpdate, NotificationTime } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { initialTasks, initialNotes, initialConfigs } from './initialData';
+import { notifier } from './notification';
+import { add_notification, del_notification, formatTaskNotificationBody, isOverdue, isFuture } from '../utils/notifications';
 
 let server_host="http://localhost:9000"
 
@@ -33,6 +34,27 @@ export const formatDateForContent = (dt: DateTime): string => {
     return `${dt.year}-${month}-${day}`;
 };
 
+export const getTaskStatus = (task: Task): 'done' | 'outdated' | 'running' | 'coming' => {
+    if (task.is_done) return 'done';
+
+    const now = new Date();
+    // Set hours to 0 to compare dates only, avoiding time-of-day issues.
+    now.setHours(0, 0, 0, 0); 
+    const todayTimestamp = now.getTime();
+
+    const dueTimestamp = task.due_time ? new Date(task.due_time.time_stamp).getTime() : null;
+    
+    const beginDateTime = task.begin_time || task.create_time;
+    const beginDate = new Date(beginDateTime.time_stamp);
+    beginDate.setHours(0, 0, 0, 0);
+    const beginTimestamp = beginDate.getTime();
+
+    if (dueTimestamp && dueTimestamp < todayTimestamp) return 'outdated';
+    if (beginTimestamp > todayTimestamp) return 'coming';
+    
+    return 'running';
+};
+
 
 
 
@@ -50,19 +72,20 @@ interface AppContextType {
     login: (user: string, pass: string) => Promise<boolean>;
     logout: () => void;
     syncData: () => Promise<void>;
-    addTask: (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>) => number;
-    updateTask: (task: Task) => void;
-    deleteTask: (taskId: number) => void;
+    addTask: (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>) => Promise<number>;
+    updateTask: (task: Task) => Promise<void>;
+    deleteTask: (taskId: number) => Promise<void>;
     getTaskById: (taskId: number) => Task | undefined;
     addNote: (note: Partial<Omit<Note, 'id' | 'create_time' | 'update_time'>>) => number;
     updateNote: (note: Note) => void;
     deleteNote: (noteId: number) => void;
     getNoteById: (noteId: number) => Note | undefined;
-    updateConfig: (sectionTitle: string, itemName: string, value: any) => void;
+    updateConfig: (sectionTitle: string, itemName: string, value: any) => Promise<void>;
     addTag: (tag: string) => void; // Now adds tag to current task/note
     navigateTo: (page: Page, id: number | null) => void;
     navigateBack: () => void;
     localDayUpdates: DayUpdate;
+    getTaskStatus: (task: Task) => 'done' | 'outdated' | 'running' | 'coming';
 }
 
 export const AppContext = createContext<AppContextType>(null!);
@@ -109,6 +132,23 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
             setNotes(initialNotes);
         }
     }, []);
+
+    // Initialize notifications for existing tasks after data is loaded
+    useEffect(() => {
+        const initializeNotifications = async () => {
+            if (tasks.length > 0) {
+                console.log('Initializing notifications for existing tasks');
+                for (const task of tasks) {
+                    await updateTaskNotification(task);
+                }
+            }
+        };
+        
+        // Only initialize if we have tasks loaded and configs are ready
+        if (tasks.length > 0 && configs.length > 0) {
+            initializeNotifications();
+        }
+    }, [tasks.length, configs.length]); // Run when tasks or configs are loaded
 
     // --- Navigation ---
     const navigateTo = (page: Page, id: number | null = null) => {
@@ -263,8 +303,8 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     };
     
     useEffect(() => {
-        // const intervalId = setInterval(syncData, 60000); // Sync every minute
-        const intervalId = setInterval(syncData, 10000); // Sync every 10 second for debug
+        const intervalId = setInterval(syncData, 60000); // Sync every minute
+        // const intervalId = setInterval(syncData, 10000); // Sync every 10 second for debug
         return () => clearInterval(intervalId);
     }, [isLoggedIn, token, tasks, notes]);
 
@@ -320,7 +360,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         }));
     };
 
-    const addTask = (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): number => {
+    const addTask = async (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): Promise<number> => {
         const now = getCurrentDateTime();
         const newTask: Task = {
             title: 'New Task',
@@ -342,20 +382,31 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
         localStorage.setItem(`task_${newTask.id}`, JSON.stringify(newTask));
         updateDayTimestamp(formatDateForContent(now));
+        
+        // Schedule notification for the new task
+        await updateTaskNotification(newTask);
+        
         triggerSync();
         return newTask.id;
     };
 
-    const updateTask = (updatedTask: Task) => {
+    const updateTask = async (updatedTask: Task) => {
         const now = getCurrentDateTime();
         const newTasks = tasks.map(task => task.id === updatedTask.id ? { ...updatedTask, update_time: now } : task);
         setTasks(newTasks);
         localStorage.setItem(`task_${updatedTask.id}`, JSON.stringify({ ...updatedTask, update_time: now }));
         updateDayTimestamp(formatDateForContent(now));
+        
+        // Update notification for the updated task
+        await updateTaskNotification(updatedTask);
+        
         triggerSync();
     };
 
-    const deleteTask = (taskId: number) => {
+    const deleteTask = async (taskId: number) => {
+        // Remove notification for the task being deleted
+        await del_notification(taskId);
+        
         const newTasks = tasks.filter(task => task.id !== taskId);
         setTasks(newTasks);
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
@@ -365,6 +416,83 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     };
     
     const getTaskById = (taskId: number): Task | undefined => tasks.find(task => task.id === taskId);
+
+    // --- Notification Management ---
+    const updateTaskNotification = async (task: Task): Promise<void> => {
+      // Remove any existing notification for this task
+      await del_notification(task.id);
+      
+      // Get task status using the same function as UI
+      const taskStatus = getTaskStatus(task);
+      
+      // Don't schedule notifications for completed tasks
+      if (taskStatus === 'done') {
+        console.log(`Task ${task.id} is completed, no notification scheduled`);
+        return;
+      }
+      
+      // Don't schedule notifications for future tasks
+      if (taskStatus === 'coming') {
+        console.log(`Task ${task.id} is in the future, no notification scheduled`);
+        return;
+      }
+      
+      // Handle overdue tasks - schedule daily notifications
+      if (taskStatus === 'outdated') {
+        console.log(`Task ${task.id} is overdue, scheduling daily notification`);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(9, 0, 0, 0); // 9 AM daily
+        
+        await add_notification(
+          task.id,
+          `Overdue: ${task.title}`,
+          formatTaskNotificationBody(task),
+          tomorrow
+        );
+        return;
+      }
+      
+      // Handle in-progress tasks - schedule based on config
+      const notificationSection = configs.find(section => section.title === 'Notifications');
+      const notificationTimeItem = notificationSection?.items.find(item => item.name === 'Notification Time');
+      
+      if (notificationTimeItem && notificationTimeItem.value) {
+        const notificationTimes = notificationTimeItem.value as NotificationTime[];
+        
+        for (const notificationTime of notificationTimes) {
+          const dueDate = new Date(task.due_time.time_stamp);
+          const notificationDate = new Date(dueDate);
+          
+          // Subtract the before days
+          notificationDate.setDate(notificationDate.getDate() - notificationTime.beforeDays);
+          
+          // Set the time
+          notificationDate.setHours(notificationTime.time.hour, notificationTime.time.minute, 0, 0);
+          
+          // Only schedule if the notification time is in the future
+          const now = new Date();
+          if (notificationDate > now) {
+            await add_notification(
+              task.id,
+              `Task Reminder: ${task.title}`,
+              formatTaskNotificationBody(task),
+              notificationDate
+            );
+            console.log(`Scheduled notification for task ${task.id} at ${notificationDate.toLocaleString()}`);
+          } else {
+            console.log(`Notification time ${notificationDate.toLocaleString()} is in the past, skipping`);
+          }
+        }
+      }
+    };
+
+    const updateAllTaskNotifications = async (): Promise<void> => {
+      console.log('Updating all task notifications due to config change');
+      for (const task of tasks) {
+        await updateTaskNotification(task);
+      }
+    };
 
     const addNote = (note: Partial<Omit<Note, 'id' | 'create_time' | 'update_time'>>): number => {
         const now = getCurrentDateTime();
@@ -405,10 +533,18 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
     const getNoteById = (noteId: number): Note | undefined => notes.find(note => note.id === noteId);
 
-    const updateConfig = (sectionTitle: string, itemName: string, value: any) => {
+    const updateConfig = async (sectionTitle: string, itemName: string, value: any) => {
+        const isNotificationTimeChange = sectionTitle === 'Notifications' && itemName === 'Notification Time';
+        
         setConfigs(prev => prev.map(section => 
             section.title === sectionTitle ? { ...section, items: section.items.map(item => item.name === itemName ? { ...item, value } : item) } : section
         ));
+        
+        // If notification time settings changed, update all task notifications
+        if (isNotificationTimeChange) {
+          console.log('Notification time settings changed, updating all task notifications');
+          await updateAllTaskNotifications();
+        }
     };
 
     // Derive unified tags from all tasks and notes
@@ -429,7 +565,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         addTask, updateTask, deleteTask, getTaskById,
         addNote, updateNote, deleteNote, getNoteById,
         updateConfig, addTag, navigateTo, navigateBack,
-        localDayUpdates
+        localDayUpdates, getTaskStatus
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -2,34 +2,13 @@
 import React, { useContext, useState } from 'react';
 import { Task, Page } from '../types';
 import { CheckCircleIcon, CircleIcon, TrashIcon, ChevronDownIcon, ChevronUpIcon } from './Icons';
-import { AppContext, formatDateTimeForDisplay, getCurrentDateTime, formatDateForContent } from '../context/AppContext';
+import { AppContext, formatDateTimeForDisplay, getCurrentDateTime, formatDateForContent, getTaskStatus } from '../context/AppContext';
 
 interface TaskWidgetProps {
   task: Task;
   showDone?: boolean;
   showDelete?: boolean;
 }
-
-const getTaskStatus = (task: Task): 'done' | 'outdated' | 'running' | 'coming' => {
-    if (task.is_done) return 'done';
-
-    const now = new Date();
-    // Set hours to 0 to compare dates only, avoiding time-of-day issues.
-    now.setHours(0, 0, 0, 0); 
-    const todayTimestamp = now.getTime();
-
-    const dueTimestamp = task.due_time ? new Date(task.due_time.time_stamp).getTime() : null;
-    
-    const beginDateTime = task.begin_time || task.create_time;
-    const beginDate = new Date(beginDateTime.time_stamp);
-    beginDate.setHours(0, 0, 0, 0);
-    const beginTimestamp = beginDate.getTime();
-
-    if (dueTimestamp && dueTimestamp < todayTimestamp) return 'outdated';
-    if (beginTimestamp > todayTimestamp) return 'coming';
-    
-    return 'running';
-};
 
 const TaskWidget: React.FC<TaskWidgetProps> = ({ task, showDone = true, showDelete = true }) => {
   const { updateTask, deleteTask, navigateTo } = useContext(AppContext);

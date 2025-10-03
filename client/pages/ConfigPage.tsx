@@ -2,6 +2,7 @@
 import React, { useContext, useState, DragEvent } from 'react';
 import { AppContext } from '../context/AppContext';
 import { ConfigItem, Page, NavConfig } from '../types';
+import NotificationTimeList from '../components/NotificationTimeList';
 
 const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = ({ item, sectionTitle }) => {
     const { updateConfig } = useContext(AppContext);
@@ -12,6 +13,9 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
             value = (e.target as HTMLInputElement).checked;
         } else if (item.type === 'number') {
             value = parseInt(e.target.value, 10);
+        } else if (item.type === 'notification_time_list') {
+            // This is handled by the NotificationTimeList component
+            return;
         } else {
             value = e.target.value;
         }
@@ -31,8 +35,13 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
                         <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                     </label>
                 );
-            case 'Reminder Time (minutes)':
-                return <input type="number" value={item.value} onChange={handleChange} className="w-full p-2 border rounded-md bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-right" />;
+            case 'Notification Time':
+                return (
+                    <NotificationTimeList 
+                        value={item.value} 
+                        onChange={(newValue) => updateConfig(sectionTitle, item.name, newValue)} 
+                    />
+                );
             default:
                 if (item.type === 'boolean') {
                      return (
@@ -45,15 +54,23 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
                 return null;
         }
     };
-
-    return (
-        <div className="flex justify-between items-center py-3">
-            <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
-            <div className="w-1/2 md:w-1/3 flex justify-end">
-                {renderInput()}
+    if(item.name!='Notification Time')
+        return (
+            <div className="flex justify-between items-center py-3">
+                <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
+                <div className="w-1/2 md:w-1/3 flex justify-end">
+                    {renderInput()}
+                </div>
             </div>
-        </div>
-    );
+        );
+    else
+        return (
+            <div className="flex justify-between items-center py-3">
+                <div className="flex justify-end">
+                    {renderInput()}
+                </div>
+            </div>
+        )
 };
 
 const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: NavConfig) => void }> = ({ config, updateConfig }) => {

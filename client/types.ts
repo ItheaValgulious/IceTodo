@@ -45,9 +45,16 @@ export interface NavConfig {
     hidden: Page[];
 }
 
+export interface NotificationTime {
+    id: string;
+    beforeDays: number; // 0 means on the due day
+    time: { hour: number; minute: number }; // 24-hour format
+}
+
 export type ConfigItem = 
     | { name: string; type: 'boolean' | 'string' | 'number'; value: any; }
-    | { name: 'Navigation'; type: 'nav_config'; value: NavConfig; };
+    | { name: 'Navigation'; type: 'nav_config'; value: NavConfig; }
+    | { name: 'Notification Time'; type: 'notification_time_list'; value: NotificationTime[] };
 
 
 export interface ConfigSection {

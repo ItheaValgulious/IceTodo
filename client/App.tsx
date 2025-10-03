@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useContext, useEffect, useMemo } from 'react';
 import { Page, NavConfig } from './types';
 import NavBar from './components/NavBar';
@@ -13,6 +12,8 @@ import NoteEditPage from './pages/NoteEditPage';
 import LoginModal from './components/LoginModal';
 import { AppContext } from './context/AppContext';
 
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 const App: React.FC = () => {
   const { activePage, activeId, navigateTo, configs, isLoginModalOpen, setLoginModalOpen, isLoggedIn, syncData } = useContext(AppContext);
 
@@ -26,23 +27,26 @@ const App: React.FC = () => {
   }, [configs]);
 
   useEffect(() => {
-    // Function that runs when the page is opened
-    const onPageOpen = async () => {
-      console.log('Page opened');
-      // Sync data when page opens
+    const initializeApp = async () => {
       if (isLoggedIn) {
         await syncData();
       }
+      
+      // Request notification permissions
+      const { display } = await LocalNotifications.requestPermissions();
+      if (display !== 'granted') {
+        console.log('Notification permissions not granted');
+      }
     };
     
-    onPageOpen();
+    initializeApp();
   }, [isLoggedIn, syncData]);
 
   const navConfig = useMemo(() => {
     const navSection = configs.find(c => c.title === 'Navigation');
     const navItem = navSection?.items.find(i => i.name === 'Navigation');
     if (navItem && navItem.type === 'nav_config') {
-        return navItem.value;
+      return navItem.value;
     }
     // Default fallback
     return { visible: [Page.MyDay, Page.Tasks, Page.Calendar, Page.Notes, Page.Config], hidden: [Page.Tags] };
