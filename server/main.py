@@ -11,7 +11,7 @@ import jwt
 from passlib.context import CryptContext
 
 # --- Configuration ---
-SECRET_KEY = "your_secret_key_here"  # Change this to a secure secret key
+SECRET_KEY = open('secret.key', 'r').read().strip()  # Change this to a secure secret key
 ALGORITHM = "HS256"
 DATABASE_URL = "sqlite:///./db.sqlite3"
 
@@ -174,7 +174,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow any origin
+    allow_origins=["http://124.222.61.175:8848"],  # Allow any origin
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],  # Allow all headers

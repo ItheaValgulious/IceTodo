@@ -2,10 +2,9 @@ import React, { createContext, useState, ReactNode, useEffect, useRef } from 're
 import { Task, Note, ConfigSection, Page, DateTime, SyncPayload, DayUpdate, NotificationTime } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { initialTasks, initialNotes, initialConfigs } from './initialData';
-import { notifier } from './notification';
 import { add_notification, del_notification, formatTaskNotificationBody, isOverdue, isFuture } from '../utils/notifications';
 
-let server_host="http://localhost:9000"
+let server_host="http://124.222.61.175:2049"
 
 export const getCurrentDateTime = (): DateTime => {
     const now = new Date();
