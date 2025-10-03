@@ -47,3 +47,15 @@ time: a time stamp of when it is uploaded.
 the content should be synced every time the info updated. and when there's a conflict just use the data with the later time.
 POST a.com/login with json body username and password, response is json obj with "status"(success/failed) and token
 develop this server with python and fastapi
+
+
+---
+
+重写这里面的代码,get_sync时接受queryparam参数from:int,只返回该时间戳之后的task/note. push_sync时同样接受querypararm from:int,将该时刻后的所有内容替换成新内容而该时刻前的不变. check时传入参数from,只对之后的task和note进行hash
+
+同时修改hash方式为:每个task/note的每个字段先用simplehash hash掉他的值,然后这些哈希值相加得到单个task/note的hash,最后将所有hash再相加得到总hash
+
+修改数据库存储方式改为userinfo里只存两种tag字段,并另外添加表tasks和表notes存储task和note的信息
+
+---
+

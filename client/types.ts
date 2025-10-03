@@ -27,7 +27,7 @@ export interface Task {
   due_time: DateTime | null;
   priority: number; 
   tags: string[];
-  children: Task[];
+  children: string[];
   repeat?: Repeat;
   punishment: Punishment;
 }
@@ -74,4 +74,8 @@ export interface SyncPayload {
     task_tag: string[];
     note_tag: string[];
     time: number;
+}
+
+export interface DayUpdate {
+    [date: string]: number; // date string (YYYY-MM-DD) -> update timestamp
 }

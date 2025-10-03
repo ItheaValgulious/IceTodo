@@ -71,15 +71,6 @@ const TaskWidget: React.FC<TaskWidgetProps> = ({ task, showDone = true, showDele
   };
 
   const hasSubtasks = task.children && task.children.length > 0;
-  const completedSubtasks = task.children?.filter(st => st.is_done).length || 0;
-
-  const handleToggleSubtaskDone = (e: React.MouseEvent, subtaskId: number) => {
-    e.stopPropagation();
-    const updatedChildren = task.children.map(subtask =>
-        subtask.id === subtaskId ? { ...subtask, is_done: !subtask.is_done, update_time: getCurrentDateTime() } : subtask
-    );
-    updateTask({ ...task, children: updatedChildren });
-  };
 
   return (
     <div className="my-2 rounded-lg shadow-sm bg-white dark:bg-slate-800">
@@ -102,7 +93,7 @@ const TaskWidget: React.FC<TaskWidgetProps> = ({ task, showDone = true, showDele
                 </p>
                 <div className="flex items-center text-sm text-slate-500 dark:text-slate-400">
                   {hasSubtasks && (
-                    <span className="mr-2">{completedSubtasks}/{task.children.length} subtasks</span>
+                    <span className="mr-2">{task.children.length} subtasks</span>
                   )}
                   { (task.begin_time || task.due_time) && (
                     <p className={`${status === 'outdated' ? 'text-red-500' : ''}`}>
@@ -133,17 +124,10 @@ const TaskWidget: React.FC<TaskWidgetProps> = ({ task, showDone = true, showDele
         </div>
         {isExpanded && hasSubtasks && (
             <div className="pl-12 pr-4 pb-2 pt-1 border-t border-slate-200 dark:border-slate-700">
-                {task.children.map(subtask => (
-                    <div key={subtask.id} className="flex items-center py-1">
-                        <button onClick={(e) => handleToggleSubtaskDone(e, subtask.id)} className="mr-3 flex-shrink-0">
-                            {subtask.is_done ? (
-                                <CheckCircleIcon className="w-5 h-5 text-green-500" />
-                            ) : (
-                                <CircleIcon className="w-5 h-5 text-slate-400" />
-                            )}
-                        </button>
-                        <p className={`flex-grow text-sm ${subtask.is_done ? 'line-through text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
-                            {subtask.title}
+                {task.children.map((subtask, index) => (
+                    <div key={index} className="flex items-center py-1">
+                        <p className="flex-grow text-sm text-slate-700 dark:text-slate-300">
+                            {subtask}
                         </p>
                     </div>
                 ))}

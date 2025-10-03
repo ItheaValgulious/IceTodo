@@ -1,6 +1,6 @@
 
 import React, { createContext, useState, ReactNode, useEffect, useRef } from 'react';
-import { Task, Note, ConfigSection, Page, DateTime, SyncPayload } from '../types';
+import { Task, Note, ConfigSection, Page, DateTime, SyncPayload, DayUpdate } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { initialTasks, initialNotes, initialConfigs } from './initialData';
 
@@ -33,16 +33,7 @@ export const formatDateForContent = (dt: DateTime): string => {
     return `${dt.year}-${month}-${day}`;
 };
 
-// A simple hash function for data integrity checks
-const simpleHash = (str: string): string => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash |= 0; // Convert to 32bit integer
-    }
-    return hash.toString();
-};
+
 
 
 interface AppContextType {
@@ -71,6 +62,7 @@ interface AppContextType {
     addTag: (tag: string) => void;
     navigateTo: (page: Page, id: number | null) => void;
     navigateBack: () => void;
+    localDayUpdates: DayUpdate;
 }
 
 export const AppContext = createContext<AppContextType>(null!);
@@ -89,6 +81,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const [username, setUsername] = useLocalStorage('username', '');
     const [token, setToken] = useLocalStorage('token', '');
     const [lastLocalUpdate, setLastLocalUpdate] = useLocalStorage('lastLocalUpdate', 0);
+    const [localDayUpdates, setLocalDayUpdates] = useLocalStorage<DayUpdate>('localDayUpdates', {});
     const [isLoginModalOpen, setLoginModalOpen] = useState(false);
     const syncTimeoutRef = useRef<number | null>(null);
 
@@ -178,54 +171,141 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         console.log("Local data overwritten by server data.");
     };
 
+
+
     const syncData = async () => {
         if (!isLoggedIn || !token) return;
-        console.log("Starting sync...");
-
-        const localData = getLocalDataPayload();
-        const localHash = simpleHash(JSON.stringify(localData));
+        console.log("Starting day-based sync...");
 
         try {
-            const checkRes = await fetch(server_host+'/check/', {
+            // Step 1: Get server days with their update times
+            const getDaysRes = await fetch(server_host+'/get_days/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token, hash: localHash })
+                body: JSON.stringify({ token })
             });
-            // Mocking server response for now
-            const checkData = await checkRes.json();
-
-            if (checkData.need_sync) {
-                console.log("Sync needed. Fetching server data...");
-                const syncGetRes = await fetch(server_host+'/sync/pull/', {
+            
+            if (!getDaysRes.ok) {
+                console.error("Failed to get server days");
+                return;
+            }
+            
+            const serverDaysData = await getDaysRes.json();
+            const serverDayUpdates: DayUpdate = serverDaysData.days || {};
+            
+            // Step 2: Build comprehensive list of local days from actual tasks and notes
+            const localDaysFromData = new Set<string>();
+            
+            // Add days from tasks
+            tasks.forEach(task => {
+                const dateStr = formatDateForContent(task.create_time);
+                localDaysFromData.add(dateStr);
+            });
+            
+            // Add days from notes
+            notes.forEach(note => {
+                const dateStr = formatDateForContent(note.create_time);
+                localDaysFromData.add(dateStr);
+            });
+            
+            // Step 3: Compare local and server update times to determine what needs to be synced
+            const daysToPull: string[] = []; // Days where server has newer data
+            const daysToPush: string[] = []; // Days where local has newer data
+            
+            // Check all server days
+            for (const [dateStr, serverUpdateTime] of Object.entries(serverDayUpdates)) {
+                const localUpdateTime = localDayUpdates[dateStr] || 0;
+                if (serverUpdateTime > localUpdateTime) {
+                    daysToPull.push(dateStr);
+                }
+            }
+            
+            // Check all local days (both from existing localDayUpdates and from actual data)
+            const allLocalDays = new Set([...Object.keys(localDayUpdates), ...localDaysFromData]);
+            for (const dateStr of allLocalDays) {
+                const localUpdateTime = localDayUpdates[dateStr] || 0;
+                const serverUpdateTime = serverDayUpdates[dateStr] || 0;
+                if (localUpdateTime > serverUpdateTime) {
+                    daysToPush.push(dateStr);
+                }
+            }
+            
+            console.log(`Days to pull: ${daysToPull.join(', ')}`);
+            console.log(`Days to push: ${daysToPush.join(', ')}`);
+            
+            // Step 3: Pull data for days where server is newer
+            for (const dateStr of daysToPull) {
+                const [year, month, day] = dateStr.split('-').map(Number);
+                
+                const pullRes = await fetch(server_host+'/sync/pull/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token })
+                    body: JSON.stringify({ token, year, month, day })
                 });
-                const serverPayload = await syncGetRes.json();
-
-                if (syncGetRes.status!=404 && serverPayload.time > lastLocalUpdate) {
-                    console.log("Server data is newer. Updating local data.");
-                    replaceLocalData(serverPayload);
-                    setLastLocalUpdate(serverPayload.time);
-                } else {
-                    console.log("Local data is newer. Uploading to server.");
-                    await fetch(server_host+'/sync/push/', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token, content: localData })
-                    });
-                    setLastLocalUpdate(localData.time);
+                
+                if (pullRes.ok) {
+                    const serverPayload = await pullRes.json();
+                    
+                    // Merge server data with local data for this day
+                    const mergedTasks = [...tasks.filter(t => formatDateForContent(t.create_time) !== dateStr), ...serverPayload.tasks];
+                    const mergedNotes = [...notes.filter(n => formatDateForContent(n.create_time) !== dateStr), ...serverPayload.notes];
+                    
+                    setTasks(mergedTasks);
+                    setNotes(mergedNotes);
+                    
+                    // Update local storage
+                    localStorage.setItem('task_ids', JSON.stringify(mergedTasks.map(t => t.id)));
+                    mergedTasks.forEach(task => localStorage.setItem(`task_${task.id}`, JSON.stringify(task)));
+                    localStorage.setItem('note_ids', JSON.stringify(mergedNotes.map(n => n.id)));
+                    mergedNotes.forEach(note => localStorage.setItem(`note_${note.id}`, JSON.stringify(note)));
+                    
+                    // Update local day timestamp to match server
+                    setLocalDayUpdates(prev => ({
+                        ...prev,
+                        [dateStr]: serverPayload.time
+                    }));
+                    
+                    console.log(`Pulled data for ${dateStr}`);
                 }
-            } else {
-                console.log("Data is already in sync.");
             }
+            
+            // Step 4: Push data for days where local is newer
+            for (const dateStr of daysToPush) {
+                const [year, month, day] = dateStr.split('-').map(Number);
+                
+                // Get local data for this specific day
+                const dayTasks = tasks.filter(t => formatDateForContent(t.create_time) === dateStr);
+                const dayNotes = notes.filter(n => formatDateForContent(n.create_time) === dateStr);
+                
+                const dayPayload: SyncPayload = {
+                    tasks: dayTasks,
+                    notes: dayNotes,
+                    task_tag: [...new Set<string>(dayTasks.flatMap(t => t.tags))],
+                    note_tag: [...new Set<string>(dayNotes.flatMap(n => n.tags))],
+                    time: localDayUpdates[dateStr] || Date.now()
+                };
+                
+                const pushRes = await fetch(server_host+'/sync/push/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, year, month, day, content: dayPayload })
+                });
+                
+                if (pushRes.ok) {
+                    console.log(`Pushed data for ${dateStr}`);
+                }
+            }
+            
+            console.log("Day-based sync completed");
+            
         } catch (error) {
-            console.error("Sync failed:", error);
+            console.error("Day-based sync failed:", error);
         }
     };
     
     useEffect(() => {
-        const intervalId = setInterval(syncData, 60000); // Sync every minute
+        // const intervalId = setInterval(syncData, 60000); // Sync every minute
+        const intervalId = setInterval(syncData, 10000); // Sync every 10 second for debug
         return () => clearInterval(intervalId);
     }, [isLoggedIn, token, tasks, notes]);
 
@@ -274,6 +354,13 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     // --- Data C R U D ---
     const updateLocalTimestamp = () => setLastLocalUpdate(Date.now());
 
+    const updateDayTimestamp = (dateStr: string) => {
+        setLocalDayUpdates(prev => ({
+            ...prev,
+            [dateStr]: Date.now()
+        }));
+    };
+
     const addTask = (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): number => {
         const now = getCurrentDateTime();
         const newTask: Task = {
@@ -296,15 +383,18 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
         localStorage.setItem(`task_${newTask.id}`, JSON.stringify(newTask));
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(now));
         triggerSync();
         return newTask.id;
     };
 
     const updateTask = (updatedTask: Task) => {
-        const newTasks = tasks.map(task => task.id === updatedTask.id ? { ...updatedTask, update_time: getCurrentDateTime() } : task);
+        const now = getCurrentDateTime();
+        const newTasks = tasks.map(task => task.id === updatedTask.id ? { ...updatedTask, update_time: now } : task);
         setTasks(newTasks);
-        localStorage.setItem(`task_${updatedTask.id}`, JSON.stringify({ ...updatedTask, update_time: getCurrentDateTime() }));
+        localStorage.setItem(`task_${updatedTask.id}`, JSON.stringify({ ...updatedTask, update_time: now }));
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(now));
         triggerSync();
     };
 
@@ -314,6 +404,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         localStorage.setItem('task_ids', JSON.stringify(newTasks.map(t => t.id)));
         localStorage.removeItem(`task_${taskId}`);
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(getCurrentDateTime()));
         triggerSync();
     };
     
@@ -334,15 +425,18 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         localStorage.setItem('note_ids', JSON.stringify(newNotes.map(n => n.id)));
         localStorage.setItem(`note_${newNote.id}`, JSON.stringify(newNote));
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(now));
         triggerSync();
         return newNote.id;
     };
 
     const updateNote = (updatedNote: Note) => {
-        const newNotes = notes.map(note => note.id === updatedNote.id ? { ...updatedNote, update_time: getCurrentDateTime() } : note);
+        const now = getCurrentDateTime();
+        const newNotes = notes.map(note => note.id === updatedNote.id ? { ...updatedNote, update_time: now } : note);
         setNotes(newNotes);
-        localStorage.setItem(`note_${updatedNote.id}`, JSON.stringify({ ...updatedNote, update_time: getCurrentDateTime() }));
+        localStorage.setItem(`note_${updatedNote.id}`, JSON.stringify({ ...updatedNote, update_time: now }));
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(now));
         triggerSync();
     };
 
@@ -352,6 +446,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         localStorage.setItem('note_ids', JSON.stringify(newNotes.map(n => n.id)));
         localStorage.removeItem(`note_${noteId}`);
         updateLocalTimestamp();
+        updateDayTimestamp(formatDateForContent(getCurrentDateTime()));
         triggerSync();
     };
 
@@ -374,7 +469,8 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         tasks, notes, configs, tags, activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout, syncData,
         addTask, updateTask, deleteTask, getTaskById,
         addNote, updateNote, deleteNote, getNoteById,
-        updateConfig, addTag, navigateTo, navigateBack
+        updateConfig, addTag, navigateTo, navigateBack,
+        localDayUpdates
     };
 
     return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

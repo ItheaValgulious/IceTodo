@@ -1,36 +1,69 @@
-from fastapi import FastAPI, Depends, HTTPException, Body
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from typing import List, Optional, Union
+from sqlalchemy.orm import sessionmaker, Session, relationship
+from typing import List, Optional, Union, Dict, Any
 import datetime
 import json
-import hashlib
 import jwt
 from passlib.context import CryptContext
-from fastapi.middleware.cors import CORSMiddleware
 
+# --- Configuration ---
 SECRET_KEY = "your_secret_key_here"  # Change this to a secure secret key
 ALGORITHM = "HS256"
+DATABASE_URL = "sqlite:///./db.sqlite3"
+
+# --- Password Hashing ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# --- Database Setup ---
 Base = declarative_base()
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# --- SQLAlchemy Models ---
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
+    
+    user_info = relationship("UserInfo", back_populates="user", uselist=False)
+    tasks = relationship("Task", back_populates="user")
+    notes = relationship("Note", back_populates="user")
 
-class UserData(Base):
-    __tablename__ = "user_data"
+class UserInfo(Base):
+    __tablename__ = "user_info"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    content = Column(Text)  # JSON string of SyncContent
+    task_tags = Column(JSON, default=list)
+    note_tags = Column(JSON, default=list)
+    
+    user = relationship("User", back_populates="user_info")
 
-engine = create_engine("sqlite:///./db.sqlite3")
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    content = Column(Text)
+    update_time = Column(Integer)
+
+    user = relationship("User", back_populates="tasks")
+
+class Note(Base):
+    __tablename__ = "notes"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    content = Column(Text)
+    update_time = Column(Integer)
+    
+    user = relationship("User", back_populates="notes")
+
+
+
 Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -40,11 +73,11 @@ def get_db():
     finally:
         db.close()
 
-# Pydantic Models
+# --- Pydantic Models ---
 class Repeat(BaseModel):
     times: int
     days: Union[int, List[int]]
-    punishment: str  # Assuming str for punishment
+    punishment: str
 
 class DateTimeModel(BaseModel):
     year: int
@@ -52,19 +85,7 @@ class DateTimeModel(BaseModel):
     day: int
     time_stamp: int
 
-    @classmethod
-    def from_datetime(cls, dt: datetime.datetime):
-        return cls(
-            year=dt.year,
-            month=dt.month,
-            day=dt.day,
-            time_stamp=int(dt.timestamp() * 1000)  # Convert to milliseconds
-        )
-    
-    def to_datetime(self) -> datetime.datetime:
-        return datetime.datetime.fromtimestamp(self.time_stamp / 1000)
-
-class Task(BaseModel):
+class TaskModel(BaseModel):
     id: int
     title: str
     is_done: bool
@@ -75,12 +96,12 @@ class Task(BaseModel):
     due_time: Optional[DateTimeModel] = None
     priority: int = Field(default=5, ge=0, le=9)
     tags: List[str] = Field(default_factory=list)
-    children: List["Task"] = Field(default_factory=list)
+    children: List[str] = Field(default_factory=list)
     repeat: Optional[Repeat] = None
     delete: bool = False
     highlight: bool = True
 
-class Note(BaseModel):
+class NoteModel(BaseModel):
     id: int
     content: str
     create_time: DateTimeModel
@@ -88,16 +109,13 @@ class Note(BaseModel):
     tags: List[str] = Field(default_factory=list)
 
 class SyncContent(BaseModel):
-    tasks: List[Task]
-    notes: List[Note]
+    tasks: List[TaskModel]
+    notes: List[NoteModel]
     task_tag: List[str]
     note_tag: List[str]
     time: int
 
-# Rebuild for recursive Task
-Task.model_rebuild()
-
-# Helper functions
+# --- Helper Functions ---
 def get_password_hash(password: str):
     return pwd_context.hash(password)
 
@@ -107,7 +125,7 @@ def verify_password(plain_password: str, hashed_password: str):
 def create_token(user_id: int):
     return jwt.encode({"sub": str(user_id)}, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str) -> int:
+def get_current_user_id(token: str) -> int:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
@@ -117,18 +135,45 @@ def get_current_user(token: str) -> int:
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
+
+def get_day_timestamp_range(year: int, month: int, day: int) -> tuple:
+    """Get start and end timestamps for a specific day"""
+    start_date = datetime.datetime(year, month, day)
+    end_date = start_date + datetime.timedelta(days=1)
+    start_timestamp = int(start_date.timestamp() * 1000)
+    end_timestamp = int(end_date.timestamp() * 1000)
+    return start_timestamp, end_timestamp
+
+def get_create_time_from_content(content: str) -> DateTimeModel:
+    """Extract create_time from task/note content"""
+    try:
+        data = json.loads(content)
+        create_time_data = data.get('create_time', {})
+        return DateTimeModel(
+            year=create_time_data.get('year', 1970),
+            month=create_time_data.get('month', 1),
+            day=create_time_data.get('day', 1),
+            time_stamp=create_time_data.get('time_stamp', 0)
+        )
+    except (json.JSONDecodeError, KeyError):
+        return DateTimeModel(year=1970, month=1, day=1, time_stamp=0)
+
+
+
+# --- FastAPI App ---
 app = FastAPI()
 
-# Add CORS middleware
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],  # Allow any origin
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
-# Login endpoint
+# --- Endpoints ---
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -145,94 +190,156 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     token = create_token(user.id)
     return LoginResponse(status="success", token=token)
 
-# Check endpoint
-class CheckRequest(BaseModel):
-    token: str
-    hash: str
 
-@app.post("/check/")
-def check_hash(request: CheckRequest, db: Session = Depends(get_db)):
-    user_id = get_current_user(request.token)
-    user_data = db.query(UserData).filter(UserData.user_id == user_id).first()
-    if not user_data:
-        return {"need_sync": True}
-    content_dict = json.loads(user_data.content)
-    # Compute hash of sorted JSON (canonical form)
-    server_hash = hashlib.sha256(json.dumps(content_dict, sort_keys=True).encode()).hexdigest()
-    need_sync = server_hash != request.hash
-    return {"need_sync": need_sync}
-
-# Get sync (pull) endpoint - Using POST for body support, as GET with body is non-standard
-# Note: Adjusted from user's "GET" to POST for practicality; client should use POST
 
 class SyncPullRequest(BaseModel):
     token: str
+    year: int
+    month: int
+    day: int
+
 @app.post("/sync/pull/")
 def get_sync(request: SyncPullRequest, db: Session = Depends(get_db)):
-    user_id = get_current_user(request.token)
-    user_data = db.query(UserData).filter(UserData.user_id == user_id).first()
-    if not user_data:
-        # Return empty sync content if no data exists
-        return SyncContent(
-            tasks=[],
-            notes=[],
-            task_tag=[],
-            note_tag=[],
-            time=0
-        )
+    user_id = get_current_user_id(request.token)
     
-    try:
-        content_dict = json.loads(user_data.content)
-        return SyncContent(**content_dict)
-    except (json.JSONDecodeError, ValueError) as e:
-        # If JSON parsing fails, return empty sync content
-        return SyncContent(
-            tasks=[],
-            notes=[],
-            task_tag=[],
-            note_tag=[],
-            time=0
-        )
-    except Exception as e:
-        # If any other error occurs, raise HTTP exception
-        raise HTTPException(status_code=422, detail=f"Error processing sync data: {str(e)}")
+    user_info = db.query(UserInfo).filter(UserInfo.user_id == user_id).first()
+    if not user_info:
+        user_info = UserInfo(user_id=user_id, task_tags=[], note_tags=[])
+        db.add(user_info)
+        db.commit()
 
-# Post sync (push) endpoint
+    # Get all tasks and notes for the user
+    tasks_db = db.query(Task).filter(Task.user_id == user_id).all()
+    notes_db = db.query(Note).filter(Note.user_id == user_id).all()
+
+    # Filter by create_time within the specified day
+    tasks = []
+    notes = []
+    
+    for task_db in tasks_db:
+        create_time = get_create_time_from_content(task_db.content)
+        if (create_time.year == request.year and 
+            create_time.month == request.month and 
+            create_time.day == request.day):
+            tasks.append(TaskModel.model_validate_json(task_db.content))
+    
+    for note_db in notes_db:
+        create_time = get_create_time_from_content(note_db.content)
+        if (create_time.year == request.year and 
+            create_time.month == request.month and 
+            create_time.day == request.day):
+            notes.append(NoteModel.model_validate_json(note_db.content))
+
+    return SyncContent(
+        tasks=tasks,
+        notes=notes,
+        task_tag=user_info.task_tags,
+        note_tag=user_info.note_tags,
+        time=int(datetime.datetime.now().timestamp() * 1000)
+    )
+
 class PushRequest(BaseModel):
     token: str
+    year: int
+    month: int
+    day: int
     content: SyncContent
+
+class GetDaysRequest(BaseModel):
+    token: str
 
 @app.post("/sync/push/")
 def push_sync(request: PushRequest, db: Session = Depends(get_db)):
-    user_id = get_current_user(request.token)
-    user_data = db.query(UserData).filter(UserData.user_id == user_id).first()
+    user_id = get_current_user_id(request.token)
+
+    # Get all existing tasks and notes for the user
+    existing_tasks = db.query(Task).filter(Task.user_id == user_id).all()
+    existing_notes = db.query(Note).filter(Note.user_id == user_id).all()
+
+    # Delete existing data created on the specified day
+    for task_db in existing_tasks:
+        create_time = get_create_time_from_content(task_db.content)
+        if (create_time.year == request.year and 
+            create_time.month == request.month and 
+            create_time.day == request.day):
+            db.delete(task_db)
     
-    # Serialize the content with proper handling of DateTimeModel objects
-    content_dict = request.content.model_dump(mode='json')
-    content_str = json.dumps(content_dict)
-    
-    if not user_data:
-        user_data = UserData(user_id=user_id, content=content_str)
-        db.add(user_data)
-    else:
-        user_data.content = content_str
+    for note_db in existing_notes:
+        create_time = get_create_time_from_content(note_db.content)
+        if (create_time.year == request.year and 
+            create_time.month == request.month and 
+            create_time.day == request.day):
+            db.delete(note_db)
+
+    # Add new tasks and notes
+    for task_model in request.content.tasks:
+        db_task = Task(
+            user_id=user_id,
+            content=task_model.model_dump_json(),
+            update_time=task_model.update_time.time_stamp
+        )
+        db.add(db_task)
+            
+    for note_model in request.content.notes:
+        db_note = Note(
+            user_id=user_id,
+            content=note_model.model_dump_json(),
+            update_time=note_model.update_time.time_stamp
+        )
+        db.add(db_note)
+
+    # Update user tags
+    user_info = db.query(UserInfo).filter(UserInfo.user_id == user_id).first()
+    if not user_info:
+        user_info = UserInfo(user_id=user_id)
+        db.add(user_info)
+    user_info.task_tags = request.content.task_tag
+    user_info.note_tags = request.content.note_tag
+
     db.commit()
     return {"status": "success"}
 
-# Note: To create users, you can add a register endpoint if needed, e.g.:
+@app.post("/get_days/")
+def get_days(request: GetDaysRequest, db: Session = Depends(get_db)):
+    """Get a dictionary of all dates with their update times for the user"""
+    user_id = get_current_user_id(request.token)
+    
+    # Get all tasks and notes for the user to extract unique dates
+    tasks = db.query(Task).filter(Task.user_id == user_id).all()
+    notes = db.query(Note).filter(Note.user_id == user_id).all()
+    
+    dates_dict = {}
+    
+    # Process tasks to get dates and update times
+    for task in tasks:
+        create_time = get_create_time_from_content(task.content)
+        date_str = f"{create_time.year}-{create_time.month:02d}-{create_time.day:02d}"
+        
+        # Use the latest update time for this date
+        if date_str not in dates_dict or task.update_time > dates_dict[date_str]:
+            dates_dict[date_str] = task.update_time
+    
+    # Process notes to get dates and update times
+    for note in notes:
+        create_time = get_create_time_from_content(note.content)
+        date_str = f"{create_time.year}-{create_time.month:02d}-{create_time.day:02d}"
+        
+        # Use the latest update time for this date
+        if date_str not in dates_dict or note.update_time > dates_dict[date_str]:
+            dates_dict[date_str] = note.update_time
+    
+    return {"days": dates_dict}
+
 @app.post("/register")
 def register(request: LoginRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == request.username).first()
     if existing:
         raise HTTPException(400, "User exists")
-    print(request.username, request.password)
     hashed = get_password_hash(request.password)
     user = User(username=request.username, password_hash=hashed)
     db.add(user)
     db.commit()
     return {"status": "success"}
-
-# Run with: uvicorn filename:app --reload
 
 if __name__ == "__main__":
     import uvicorn
