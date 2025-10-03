@@ -4,7 +4,7 @@ import useLocalStorage from '../hooks/useLocalStorage';
 import { initialTasks, initialNotes, initialConfigs } from './initialData';
 import { add_notification, del_notification, formatTaskNotificationBody, isOverdue, isFuture } from '../utils/notifications';
 
-let server_host="http://124.222.61.175:2049"
+let server_host="http://124.222.61.175:12049"
 
 export const getCurrentDateTime = (): DateTime => {
     const now = new Date();
