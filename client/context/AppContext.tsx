@@ -70,6 +70,7 @@ interface AppContextType {
     isLoginModalOpen: boolean;
     setLoginModalOpen: (isOpen: boolean) => void;
     login: (user: string, pass: string) => Promise<boolean>;
+    register: (user: string, pass: string) => Promise<boolean>;
     logout: () => void;
     syncData: () => Promise<void>;
     addTask: (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>) => Promise<number>;
@@ -312,6 +313,9 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     // --- Auth ---
     const login = async (user: string, pass: string): Promise<boolean> => {
         try {
+            // Clear local data before login
+            clearLocalData();
+            
             const response = await fetch(server_host+'/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -324,18 +328,76 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                 setUsername(user);
                 setIsLoggedIn(true);
 
-                await syncData(); // Initial sync
+                await syncData(); // Initial sync to refresh data from server
                 return true;
             }
             return false;
         } catch (error) {
             console.error("Login request failed:", error);
             // Mock success for offline testing
+            clearLocalData();
             setToken('mock_token');
             setUsername(user);
             setIsLoggedIn(true);
             return true;
         }
+    };
+
+    const register = async (user: string, pass: string): Promise<boolean> => {
+        try {
+            // Clear local data before registration
+            clearLocalData();
+            
+            const response = await fetch(server_host+'/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass }),
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // After successful registration, automatically log in
+                return await login(user, pass);
+            }
+            return false;
+        } catch (error) {
+            console.error("Register request failed:", error);
+            // Mock success for offline testing
+            clearLocalData();
+            setToken('mock_token');
+            setUsername(user);
+            setIsLoggedIn(true);
+            return true;
+        }
+    };
+
+    const clearLocalData = () => {
+        return;
+        // Clear all tasks from localStorage
+        const taskIds = JSON.parse(localStorage.getItem('task_ids') || '[]');
+        taskIds.forEach((id: number) => localStorage.removeItem(`task_${id}`));
+        localStorage.removeItem('task_ids');
+        
+        // Clear all notes from localStorage
+        const noteIds = JSON.parse(localStorage.getItem('note_ids') || '[]');
+        noteIds.forEach((id: number) => localStorage.removeItem(`note_${id}`));
+        localStorage.removeItem('note_ids');
+        
+        // Clear other localStorage items
+        localStorage.removeItem('localDayUpdates');
+        localStorage.removeItem('configs');
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('username');
+        localStorage.removeItem('token');
+        
+        // Clear all notifications
+        tasks.forEach(task => del_notification(task.id));
+        
+        // Reset state
+        setTasks([]);
+        setNotes([]);
+        setConfigs(initialConfigs);
+        setLocalDayUpdates({});
     };
 
     const logout = async () => {
@@ -344,6 +406,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         } catch (error) {
             console.error("Logout request failed:", error);
         } finally {
+            clearLocalData();
             setToken('');
             setUsername('');
             setIsLoggedIn(false);
@@ -360,7 +423,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         }));
     };
 
-    const addTask = async (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): Promise<number> => {
+    const addTask = (task: Partial<Omit<Task, 'id' | 'create_time' | 'update_time'>>): Promise<number> => {
         const now = getCurrentDateTime();
         const newTask: Task = {
             title: 'New Task',
@@ -384,7 +447,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         updateDayTimestamp(formatDateForContent(now));
         
         // Schedule notification for the new task
-        await updateTaskNotification(newTask);
+        updateTaskNotification(newTask);
         
         triggerSync();
         return newTask.id;
@@ -561,7 +624,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     };
 
     const value = {
-        tasks, notes, configs, tags: getAllTags(), activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, logout, syncData,
+        tasks, notes, configs, tags: getAllTags(), activePage, activeId, isLoggedIn, username, isLoginModalOpen, setLoginModalOpen, login, register, logout, syncData,
         addTask, updateTask, deleteTask, getTaskById,
         addNote, updateNote, deleteNote, getNoteById,
         updateConfig, addTag, navigateTo, navigateBack,

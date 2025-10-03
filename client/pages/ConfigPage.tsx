@@ -30,22 +30,22 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
         switch (item.name) {
             case 'Dark Mode':
                 return (
-                     <label className="relative inline-flex items-center cursor-pointer">
+                    <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" checked={item.value} onChange={handleChange} className="sr-only peer" />
                         <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                     </label>
                 );
             case 'Notification Time':
                 return (
-                    <NotificationTimeList 
-                        value={item.value} 
-                        onChange={(newValue) => updateConfig(sectionTitle, item.name, newValue)} 
+                    <NotificationTimeList
+                        value={item.value}
+                        onChange={(newValue) => updateConfig(sectionTitle, item.display_name || item.name, newValue)}
                     />
                 );
             default:
                 if (item.type === 'boolean') {
-                     return (
-                         <label className="relative inline-flex items-center cursor-pointer">
+                    return (
+                        <label className="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" checked={item.value} onChange={handleChange} className="sr-only peer" />
                             <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
                         </label>
@@ -54,10 +54,10 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
                 return null;
         }
     };
-    if(item.name!='Notification Time')
+    if (item.name !== 'Notification Time')
         return (
             <div className="flex justify-between items-center py-3">
-                <span className="text-slate-700 dark:text-slate-300">{item.name}</span>
+                <span className="text-slate-700 dark:text-slate-300">{item.display_name || item.name}</span>
                 <div className="w-1/2 md:w-1/3 flex justify-end">
                     {renderInput()}
                 </div>
@@ -65,10 +65,8 @@ const ConfigItemWidget: React.FC<{ item: ConfigItem; sectionTitle: string }> = (
         );
     else
         return (
-            <div className="flex justify-between items-center py-3">
-                <div className="flex justify-end">
-                    {renderInput()}
-                </div>
+            <div className="py-3">
+                {renderInput()}
             </div>
         )
 };
@@ -91,7 +89,7 @@ const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: N
         if (!draggedItem) return;
 
         const newConfig = { ...config };
-        
+
         // Remove from both lists
         newConfig.visible = newConfig.visible.filter(p => p !== draggedItem);
         newConfig.hidden = newConfig.hidden.filter(p => p !== draggedItem);
@@ -102,7 +100,7 @@ const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: N
         } else {
             newConfig.hidden.push(draggedItem);
         }
-        
+
         updateConfig(newConfig);
         setDraggedItem(null);
     };
@@ -111,13 +109,13 @@ const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: N
         <div className="grid grid-cols-2 gap-4 pt-2">
             <div>
                 <h3 className="font-semibold mb-2 text-center">Visible Items</h3>
-                <div 
+                <div
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, 'visible')}
                     className="p-2 min-h-[200px] bg-slate-100 dark:bg-slate-700 rounded-md space-y-2"
                 >
                     {config.visible.map(page => (
-                        <div 
+                        <div
                             key={page}
                             draggable
                             onDragStart={(e) => handleDragStart(e, page)}
@@ -128,15 +126,15 @@ const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: N
                     ))}
                 </div>
             </div>
-             <div>
+            <div>
                 <h3 className="font-semibold mb-2 text-center">Hidden Items</h3>
-                <div 
+                <div
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, 'hidden')}
                     className="p-2 min-h-[200px] bg-slate-100 dark:bg-slate-700 rounded-md space-y-2"
                 >
                     {config.hidden.map(page => (
-                        <div 
+                        <div
                             key={page}
                             draggable
                             onDragStart={(e) => handleDragStart(e, page)}
@@ -154,14 +152,14 @@ const NavConfigWidget: React.FC<{ config: NavConfig, updateConfig: (newConfig: N
 
 const AccountSection: React.FC = () => {
     const { isLoggedIn, username, logout, setLoginModalOpen } = useContext(AppContext);
-    
+
     return (
         <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
             <h2 className="text-xl font-semibold mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">Account</h2>
             {isLoggedIn ? (
                 <div className="flex justify-between items-center py-3">
                     <span className="text-slate-700 dark:text-slate-300">Logged in as: <span className="font-medium">{username}</span></span>
-                    <button 
+                    <button
                         onClick={logout}
                         className="px-4 py-2 rounded-md text-white bg-red-600 hover:bg-red-700"
                     >
@@ -171,7 +169,7 @@ const AccountSection: React.FC = () => {
             ) : (
                 <div className="flex justify-between items-center py-3">
                     <span className="text-slate-700 dark:text-slate-300">You are not logged in.</span>
-                     <button 
+                    <button
                         onClick={() => setLoginModalOpen(true)}
                         className="px-4 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-700"
                     >
@@ -179,6 +177,10 @@ const AccountSection: React.FC = () => {
                     </button>
                 </div>
             )}
+            <div className="mt-3 text-xs text-slate-600 dark:text-slate-400">
+                You need an account only when you want to sync your tasks with the server.<br></br>
+                Attention: When logging in with local data, it may replace today's data in cloud.
+            </div>
         </div>
     );
 };
@@ -198,7 +200,7 @@ const ConfigPage: React.FC = () => {
                     <div key={section.title} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
                         <h2 className="text-xl font-semibold mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">{section.title}</h2>
                         <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                           {section.items.map(item => <ConfigItemWidget key={item.name} item={item} sectionTitle={section.title}/>)}
+                            {section.items.map(item => <ConfigItemWidget key={item.name} item={item} sectionTitle={section.title} />)}
                         </div>
                     </div>
                 ))}
