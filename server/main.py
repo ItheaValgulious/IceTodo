@@ -174,7 +174,10 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://124.222.61.175:8848"],  # Allow any origin
+    allow_origins=[
+        "capacitor://localhost",           # for Capacitor apps
+        "http://124.222.61.175:8848"
+    ],  # Allow any origin
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],  # Allow all headers
